@@ -1,5 +1,5 @@
 //! Mnemonic utilities for Soroban smart contract
-//! 
+//!
 //! Note: Entropy must be provided off-chain since blockchain execution must be deterministic.
 //! Use this module to derive seeds and validate mnemonics on-chain.
 
@@ -42,26 +42,26 @@ impl WordCount {
     /// Get required entropy size in bytes
     pub fn entropy_size(&self) -> usize {
         match self {
-            WordCount::Words12 => 16,  // 128 bits
-            WordCount::Words15 => 20,  // 160 bits
-            WordCount::Words18 => 24,  // 192 bits
-            WordCount::Words21 => 28,  // 224 bits
-            WordCount::Words24 => 32,  // 256 bits
+            WordCount::Words12 => 16, // 128 bits
+            WordCount::Words15 => 20, // 160 bits
+            WordCount::Words18 => 24, // 192 bits
+            WordCount::Words21 => 28, // 224 bits
+            WordCount::Words24 => 32, // 256 bits
         }
     }
 }
 
 /// Derive a seed from entropy bytes.
-/// 
+///
 /// # Arguments
 /// * `env` - Soroban environment
 /// * `entropy` - Random entropy bytes (must match word count: 16/20/24/28/32 bytes)
 /// * `passphrase` - Optional passphrase (empty string if none)
-/// 
+///
 /// # Returns
 /// * `Ok(Bytes)` - 64-byte seed
 /// * `Err(MnemonicError)` - If entropy length is invalid
-/// 
+///
 /// # Example
 /// ```ignore
 /// let entropy = Bytes::from_array(&env, &[0u8; 16]); // 12-word mnemonic
@@ -73,7 +73,7 @@ pub fn derive_seed_from_entropy(
     passphrase: Bytes,
 ) -> Result<Bytes, MnemonicError> {
     let entropy_len = entropy.len();
-    
+
     // Validate entropy length matches a valid word count
     let valid_lengths = [16, 20, 24, 28, 32];
     if !valid_lengths.contains(&entropy_len) {
@@ -83,13 +83,13 @@ pub fn derive_seed_from_entropy(
     // PBKDF2-HMAC-SHA512 derivation
     // Seed = PBKDF2-HMAC-SHA512("mnemonic" + passphrase, entropy, 2048, 64)
     let seed = pbkdf2_hmac_sha512(env, &entropy, &passphrase, 2048, 64);
-    
+
     Ok(seed)
 }
 
 /// PBKDF2-HMAC-SHA512 implementation for seed derivation
-/// 
-/// This implements the BIP-39 seed derivation: 
+///
+/// This implements the BIP-39 seed derivation:
 /// PBKDF2-HMAC-SHA512(password="mnemonic"+passphrase, salt=entropy, iterations=2048, dklen=64)
 fn pbkdf2_hmac_sha512(
     env: &Env,
@@ -99,7 +99,7 @@ fn pbkdf2_hmac_sha512(
     _dklen: usize,
 ) -> Bytes {
     use sha2::Sha512;
-    
+
     // Build password: "mnemonic" + passphrase
     let mut password = b"mnemonic".to_vec();
     for i in 0..passphrase.len() {
@@ -107,7 +107,7 @@ fn pbkdf2_hmac_sha512(
             password.push(byte);
         }
     }
-    
+
     // Build salt from entropy
     let mut salt = Vec::new();
     for i in 0..entropy.len() {
@@ -115,25 +115,21 @@ fn pbkdf2_hmac_sha512(
             salt.push(byte);
         }
     }
-    
+
     // PBKDF2 derivation
     let mut result = [0u8; 64];
-    pbkdf2::pbkdf2::<hmac::Hmac<Sha512>>(
-        &password,
-        &salt,
-        iterations,
-        &mut result,
-    ).expect("PBKDF2 derivation failed");
-    
+    pbkdf2::pbkdf2::<hmac::Hmac<Sha512>>(&password, &salt, iterations, &mut result)
+        .expect("PBKDF2 derivation failed");
+
     Bytes::from_array(env, &result)
 }
 
 /// Validate that entropy length matches expected word count
-/// 
+///
 /// # Arguments
 /// * `entropy_len` - Length of entropy in bytes
 /// * `expected_words` - Expected word count (12, 15, 18, 21, or 24)
-/// 
+///
 /// # Returns
 /// * `true` if the entropy length is valid for the word count
 pub fn validate_entropy_length(entropy_len: usize, expected_words: usize) -> bool {
@@ -145,10 +141,10 @@ pub fn validate_entropy_length(entropy_len: usize, expected_words: usize) -> boo
 }
 
 /// Get the word count for a given entropy length
-/// 
+///
 /// # Arguments
 /// * `entropy_len` - Length of entropy in bytes
-/// 
+///
 /// # Returns
 /// * `Some(WordCount)` if valid entropy length
 /// * `None` if invalid entropy length

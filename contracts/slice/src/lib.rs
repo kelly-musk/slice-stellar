@@ -5,10 +5,10 @@ use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Symbol, V
 use types::{Categories, Config, Dispute, DisputeStatus, TimeLimits};
 
 mod error;
+mod mnemonic_generator;
 mod storage;
 mod types;
 mod xlm;
-mod mnemonic_generator;
 
 mod ultrahonk_contract {
     // TODO: Add ultrahonk_soroban_contract.wasm for ZK proof verification
