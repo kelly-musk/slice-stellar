@@ -55,14 +55,11 @@ export const defaultChain: Chain = (() => {
     return mockChain;
   }
 
-  switch (network) {
-    case "mainnet":
-      return stellarMainnet;
-    case "standalone":
-      return stellarStandalone;
-    default:
-      return stellarTestnet;
+  if (plugin === "stellar") {
+    return getChainByNetwork(network);
   }
+
+  return mockChain;
 })();
 
 /**

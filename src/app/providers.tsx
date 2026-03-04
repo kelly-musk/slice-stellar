@@ -57,13 +57,31 @@ export default function ContextProvider({ children, tenant, initialState }: Prop
   );
 
   useEffect(() => {
+    let isMounted = true;
     const info = getPlugin(pluginName);
-    console.log(`[Providers] Initializing blockchain plugin: ${pluginName}`);
+    console.log(`[Providers] Initializing blockchain plugin: ${info.name}`);
     registry.register(info.plugin);
-    registry.activate(pluginName).then(() => {
-      setPluginInfo(info);
-      setIsReady(true);
-    });
+
+    registry
+      .activate(info.name)
+      .then(() => {
+        if (!isMounted) return;
+        setPluginInfo(info);
+        setIsReady(true);
+      })
+      .catch((error) => {
+        console.error(
+          `[Providers] Failed to activate blockchain plugin "${info.name}"`,
+          error,
+        );
+        if (!isMounted) return;
+        setPluginInfo(info);
+        setIsReady(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [tenant]);
 
   if (!isReady) {

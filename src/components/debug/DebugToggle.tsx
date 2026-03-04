@@ -2,11 +2,12 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { NetworkDebugger } from "./NetworkDebugger";
+import storage from "@/util/storage";
 
 // Helper to read localStorage value for SSR
 const getStoredDebugMode = (): boolean => {
   if (typeof window === "undefined") return false;
-  return localStorage.getItem("slice_debug_mode") === "true";
+  return storage.getItem("slice_debug_mode", "safe") ?? false;
 };
 
 export const DebugToggle = () => {
@@ -22,7 +23,7 @@ export const DebugToggle = () => {
   const toggle = () => {
     const next = !isVisible;
     setIsVisible(next);
-    localStorage.setItem("slice_debug_mode", String(next));
+    storage.setItem("slice_debug_mode", next);
     // Dispatch event for any other components listening
     window.dispatchEvent(new Event("debug-toggle"));
   };

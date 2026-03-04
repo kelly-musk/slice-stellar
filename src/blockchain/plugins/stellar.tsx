@@ -1,85 +1,114 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type {
   BlockchainAccount,
-  BlockchainPlugin,
   BlockchainBalance,
   BlockchainContracts,
+  BlockchainPlugin,
+  UseConnectHook,
+  UseDisputeQueryHook,
+  UseRevealHook,
+  UseVoteHook,
 } from "../types";
 import { stellarConfig, isStellarConfigured } from "@/config/stellar";
+import {
+  getStellarSession,
+  StellarAdapterProvider,
+  subscribeToStellarConnection,
+  useStellarAdapter,
+  type StellarAdapter,
+} from "./stellarAdapter";
 
-const CONNECT_KEY = "slice_stellar_connected";
 const PROFILE_KEY = "slice_stellar_profile";
-const DEFAULT_ADDRESS = "GBZXN7PIRZGNMHGAH7B27SSEDBM7J4ORL2VYSXDM2R4GJ3EDT4K7W2ZB";
 const DEFAULT_PROFILE = {
   name: "Stellar Juror",
   avatar: "/images/profiles-mockup/profile-1.jpg",
 };
+const TOKEN_BALANCE_QUERY_KEY = ["tokenBalance", "stellar"] as const;
 
-const getStoredConnection = () => {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(CONNECT_KEY) === "true";
+type StellarActionName = Parameters<StellarAdapter["executeAction"]>[0];
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  const asString = String(error ?? "");
+  return asString || "Unknown error";
 };
 
-const setStoredConnection = (value: boolean) => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(CONNECT_KEY, value ? "true" : "false");
-  window.dispatchEvent(new Event("slice-stellar-connection"));
+const useStellarAdapterAction = (
+  action: StellarActionName,
+  options?: {
+    successMessage?: string;
+    errorPrefix?: string;
+  },
+) => {
+  const adapter = useStellarAdapter();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const execute = useCallback(
+    async (...args: unknown[]) => {
+      setIsLoading(true);
+
+      try {
+        await adapter.executeAction(action, args);
+        toast.success(options?.successMessage ?? `${action} successful`);
+        return true;
+      } catch (error) {
+        const message = getErrorMessage(error);
+        const prefix = options?.errorPrefix ?? `${action} failed`;
+        toast.error(`${prefix}: ${message}`);
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [action, adapter, options?.errorPrefix, options?.successMessage],
+  );
+
+  return { execute, isLoading };
 };
 
 const useAccount = (): BlockchainAccount => {
-  const [isConnected, setIsConnected] = useState(() => getStoredConnection());
-  const [address, setAddress] = useState<string | undefined>(() =>
-    getStoredConnection() ? DEFAULT_ADDRESS : undefined
+  const [address, setAddress] = useState<string | undefined>(
+    () => getStellarSession()?.address,
+  );
+  const [isConnected, setIsConnected] = useState(() =>
+    Boolean(getStellarSession()),
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    // Only handle storage events (sync across tabs) and auto-connect delay
-    const storedValue = window.localStorage.getItem(CONNECT_KEY);
-    if (storedValue === null) {
-      // Auto-connect for demo purposes if no stored value
-      const timer = window.setTimeout(() => {
-        setIsConnected(true);
-        setAddress(DEFAULT_ADDRESS);
-        setStoredConnection(true);
-      }, 500);
-
-      return () => window.clearTimeout(timer);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
     const handleChange = () => {
-      const connected = getStoredConnection();
-      setIsConnected(connected);
-      setAddress(connected ? DEFAULT_ADDRESS : undefined);
+      const session = getStellarSession();
+      setIsConnected(Boolean(session));
+      setAddress(session?.address);
     };
-    window.addEventListener("slice-stellar-connection", handleChange);
-    return () => window.removeEventListener("slice-stellar-connection", handleChange);
+
+    handleChange();
+    return subscribeToStellarConnection(handleChange);
   }, []);
 
   return {
     address,
     isConnected,
-    status: isConnected ? "connected" : "connecting",
+    status: isConnected ? "connected" : "disconnected",
     isReady: true,
   };
 };
 
-const useGetDispute = (id: string) => {
+const useGetDispute = (id: string | number): UseDisputeQueryHook => {
   const now = Math.floor(Date.now() / 1000);
   const revealDeadline = now + 86400;
   const evidenceDeadline = now + 43200;
+  const disputeId = String(id);
 
   return {
     dispute: {
-      id,
+      id: disputeId,
       title: "Stellar Dispute: Should we ship on Soroban?",
       category: "Engineering",
       status: 1,
@@ -103,23 +132,186 @@ const useGetDispute = (id: string) => {
   };
 };
 
-const useStellarAction = (name: string) => {
-  const [isLoading, setIsLoading] = useState(false);
+const useConnect = (): UseConnectHook => {
+  const adapter = useStellarAdapter();
 
-  const execute = useCallback(
-    async (...args: any[]) => {
-      setIsLoading(true);
-      console.log(`[Stellar] Action ${name} called with:`, args);
-      // In real implementation, this would call Soroban contract
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setIsLoading(false);
-      toast.success(`${name} successful (Stellar)`);
-      return true;
-    },
-    [name],
+  const connect = useCallback(async () => {
+    try {
+      await adapter.connect();
+      toast.success("Connected to Stellar wallet");
+    } catch (error) {
+      toast.error(`Failed to connect wallet: ${getErrorMessage(error)}`);
+      throw error;
+    }
+  }, [adapter]);
+
+  return {
+    connect,
+    connectors: [],
+  };
+};
+
+const useSliceConnect = () => {
+  const adapter = useStellarAdapter();
+  const [isAuthenticated, setIsAuthenticated] = useState(() =>
+    Boolean(adapter.getSession()),
   );
 
-  return { execute, isLoading };
+  useEffect(() => {
+    const syncSession = () => {
+      setIsAuthenticated(Boolean(adapter.getSession()));
+    };
+
+    syncSession();
+    return subscribeToStellarConnection(syncSession);
+  }, [adapter]);
+
+  const connect = useCallback(async () => {
+    try {
+      await adapter.connect();
+      setIsAuthenticated(true);
+      toast.success("Connected to Stellar wallet");
+    } catch (error) {
+      setIsAuthenticated(Boolean(adapter.getSession()));
+      toast.error(`Failed to connect wallet: ${getErrorMessage(error)}`);
+      throw error;
+    }
+  }, [adapter]);
+
+  const disconnect = useCallback(() => {
+    adapter.disconnect();
+    setIsAuthenticated(false);
+    toast.success("Disconnected from Stellar wallet");
+  }, [adapter]);
+
+  return {
+    connect,
+    disconnect,
+    isAuthenticated,
+  };
+};
+
+const useTokenBalance = (): BlockchainBalance => {
+  const query = useQuery({
+    queryKey: TOKEN_BALANCE_QUERY_KEY,
+    queryFn: async () => 500000000n,
+    initialData: 500000000n,
+  });
+
+  return {
+    balance: query.data ?? 0n,
+    isLoading: query.isLoading || query.isFetching,
+    error: query.error instanceof Error ? query.error : undefined,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+};
+
+const useCreateDispute = () => {
+  const { execute, isLoading } = useStellarAdapterAction("Create Dispute");
+  return { createDispute: execute, isCreating: isLoading };
+};
+
+const usePayDispute = () => {
+  const { execute, isLoading } = useStellarAdapterAction("Pay Dispute");
+  return { payDispute: execute, isPaying: isLoading };
+};
+
+const useExecuteRuling = () => {
+  const { execute, isLoading } = useStellarAdapterAction("Execute Ruling");
+  return { executeRuling: execute, isExecuting: isLoading };
+};
+
+const useAssignDispute = () => {
+  const { execute, isLoading } = useStellarAdapterAction("Assign Dispute", {
+    successMessage: "Dispute assigned successfully",
+  });
+  const [isReady, setIsReady] = useState(() => Boolean(getStellarSession()));
+
+  useEffect(() => {
+    const syncSession = () => setIsReady(Boolean(getStellarSession()));
+    syncSession();
+    return subscribeToStellarConnection(syncSession);
+  }, []);
+
+  return {
+    drawDispute: async (amount?: unknown) => {
+      const success = await execute(amount);
+      return success ? "1" : null;
+    },
+    isLoading,
+    isReady,
+  };
+};
+
+const useSendFunds = () => {
+  const { execute, isLoading } = useStellarAdapterAction("Send Funds");
+  return { sendFunds: execute, isSending: isLoading };
+};
+
+const useWithdraw = () => {
+  const { execute, isLoading } = useStellarAdapterAction("Withdraw");
+  return {
+    withdraw: execute,
+    isWithdrawing: isLoading,
+    claimableAmount: "250",
+    hasFunds: true,
+  };
+};
+
+const useFaucet = () => {
+  const { execute, isLoading } = useStellarAdapterAction("Faucet", {
+    successMessage: "Faucet request successful",
+    errorPrefix: "Faucet request failed",
+  });
+
+  return {
+    requestTokens: execute,
+    isRequesting: isLoading,
+    mint: execute,
+    isPending: isLoading,
+    isReady: true,
+  };
+};
+
+const useVote = (): UseVoteHook => {
+  const { execute, isLoading } = useStellarAdapterAction("Vote");
+  const [selectedVote, setSelectedVote] = useState<number | null>(null);
+  const [hasCommittedLocally, setHasCommittedLocally] = useState(false);
+
+  return {
+    handleCommit: async (...args: unknown[]) => {
+      const success = await execute(...args);
+      if (success) {
+        setHasCommittedLocally(true);
+      }
+      return success;
+    },
+    isProcessing: isLoading,
+    dispute: null,
+    selectedVote,
+    hasCommittedLocally,
+    isRefreshing: false,
+    isCommitDisabled: isLoading || selectedVote === null,
+    isRevealDisabled: !hasCommittedLocally,
+    handleVoteSelect: (vote: number) => setSelectedVote(vote),
+    handleRefresh: async () => {},
+  };
+};
+
+const useReveal = (): UseRevealHook => {
+  const { execute, isLoading } = useStellarAdapterAction("Reveal");
+
+  return {
+    revealVote: execute,
+    isProcessing: isLoading,
+    dispute: null,
+    localVote: null,
+    hasLocalData: true,
+    logs: [],
+    status: { isTooEarly: false, isRevealOpen: true, isFinished: false },
+  };
 };
 
 export const stellarPlugin: BlockchainPlugin = {
@@ -134,14 +326,14 @@ export const stellarPlugin: BlockchainPlugin = {
 
     if (!isStellarConfigured()) {
       console.warn(
-        "[StellarPlugin] Warning: Stellar contract ID not configured. Some features may not work."
+        "[StellarPlugin] Warning: Stellar contract ID not configured. Some features may not work.",
       );
     }
   },
 
   getProviderComponent: () => {
-    const StellarProvider = ({ children }: { children: React.ReactNode }) => {
-      return <>{children}</>;
+    const StellarProvider = ({ children }: { children: ReactNode }) => {
+      return <StellarAdapterProvider>{children}</StellarAdapterProvider>;
     };
     return StellarProvider;
   },
@@ -154,117 +346,40 @@ export const stellarPlugin: BlockchainPlugin = {
       isLoading: false,
     }),
 
-    useContracts: (): BlockchainContracts => ({
-      sliceContract: stellarConfig.sliceContractId || "C_STELLAR_SLICE",
-      usdcToken: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC on Stellar testnet
-      chainId: stellarConfig.network,
-    }),
+    useContracts: (): BlockchainContracts => {
+      const adapter = useStellarAdapter();
+      return {
+        sliceContract: stellarConfig.sliceContractId || "C_STELLAR_SLICE",
+        usdcToken: adapter.getUsdcToken() || "",
+        chainId: stellarConfig.network,
+      };
+    },
 
-    useConnect: () => ({
-      connect: () => {
-        setStoredConnection(true);
-        toast.success("Connected to Stellar (Freighter)");
-      },
-      connectors: [],
-    }),
+    useConnect,
 
-    useSliceConnect: () => ({
-      connect: () => {
-        setStoredConnection(true);
-        toast.success("Connected to Stellar (Freighter)");
-      },
-      disconnect: () => {
-        setStoredConnection(false);
-        toast.success("Disconnected from Stellar");
-      },
-      isAuthenticated: getStoredConnection(),
-    }),
+    useSliceConnect,
 
-    useTokenBalance: () => ({ balance: 500000000n, isLoading: false }),
+    useTokenBalance,
 
     useStakingToken: () => ({ symbol: "XLM", decimals: 7 }),
 
-    useCreateDispute: () => {
-      const { execute, isLoading } = useStellarAction("Create Dispute");
-      return { createDispute: execute, isCreating: isLoading };
-    },
+    useCreateDispute,
 
-    usePayDispute: () => {
-      const { execute, isLoading } = useStellarAction("Pay Dispute");
-      return { payDispute: execute, isPaying: isLoading };
-    },
+    usePayDispute,
 
-    useExecuteRuling: () => {
-      const { execute, isLoading } = useStellarAction("Execute Ruling");
-      return { executeRuling: execute, isExecuting: isLoading };
-    },
+    useExecuteRuling,
 
-    useAssignDispute: () => {
-      const { execute, isLoading } = useStellarAction("Assign Dispute");
-      return {
-        drawDispute: async () => {
-          await execute();
-          return "1";
-        },
-        isLoading,
-        isReady: true,
-      };
-    },
+    useAssignDispute,
 
-    useSendFunds: () => {
-      const { execute, isLoading } = useStellarAction("Send Funds");
-      return { sendFunds: execute, isSending: isLoading };
-    },
+    useSendFunds,
 
-    useWithdraw: () => {
-      const { execute, isLoading } = useStellarAction("Withdraw");
-      return {
-        withdraw: execute,
-        isWithdrawing: isLoading,
-        claimableAmount: "250",
-        hasFunds: true,
-      };
-    },
+    useWithdraw,
 
-    useFaucet: () => {
-      const { execute, isLoading } = useStellarAction("Faucet");
-      return {
-        requestTokens: execute,
-        isRequesting: isLoading,
-        mint: execute,
-        isPending: isLoading,
-        isReady: true,
-      };
-    },
+    useFaucet,
 
-    useVote: () => {
-      const { execute, isLoading } = useStellarAction("Vote");
-      return {
-        handleCommit: execute,
-        isProcessing: isLoading,
-        dispute: null,
-        selectedVote: null,
-        hasCommittedLocally: false,
-        isRefreshing: false,
-        isCommitDisabled: false,
-        isRevealDisabled: true,
-        handleVoteSelect: () => {},
-        handleRefresh: async () => {},
-      };
-    },
+    useVote,
 
-    useReveal: () => {
-      const { execute, isLoading } = useStellarAction("Reveal");
-      return {
-        revealVote: execute,
-        isProcessing: isLoading,
-        dispute: null,
-        localVote: null,
-        hasLocalData: true,
-        logs: [],
-        status: { isTooEarly: false, isRevealOpen: true, isFinished: false },
-      };
-    },
+    useReveal,
 
     useSliceVoting: () => ({
       commitVote: async () => true,

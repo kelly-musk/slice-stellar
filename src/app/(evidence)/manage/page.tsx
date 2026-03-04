@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "@/blockchain/hooks";
 import { useMyDisputes } from "@/blockchain/hooks";
@@ -107,8 +107,17 @@ const ManagerCaseCard = ({
 }) => {
   const router = useRouter();
 
-  // FIX: Use lazy initialization for 'now' to ensure purity during render
-  const [now] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 30_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   // Determine Role
   const isClaimer = dispute.claimer.toLowerCase() === address?.toLowerCase();
@@ -141,7 +150,6 @@ const ManagerCaseCard = ({
   // Assuming status 1 (Commit) allows evidence. Check your contract logic.
   // Usually evidence is allowed until 'evidenceDeadline'.
   else if (dispute.status === 1 || dispute.status === 2) {
-    // FIX: Use the state-based 'now' instead of calling Date.now() directly
     const canSubmit =
       now > 0 && now / 1000 < (dispute.evidenceDeadline || Infinity);
 

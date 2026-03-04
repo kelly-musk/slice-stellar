@@ -4,7 +4,9 @@
 //! Use this module to derive seeds and validate mnemonics on-chain.
 
 extern crate alloc;
+use alloc::string::ToString;
 use alloc::vec::Vec;
+use bip39::{Language, Mnemonic};
 use soroban_sdk::{Bytes, Env};
 
 /// Error types for mnemonic operations
@@ -80,9 +82,18 @@ pub fn derive_seed_from_entropy(
         return Err(MnemonicError::InvalidEntropyLength);
     }
 
-    // PBKDF2-HMAC-SHA512 derivation
-    // Seed = PBKDF2-HMAC-SHA512("mnemonic" + passphrase, entropy, 2048, 64)
-    let seed = pbkdf2_hmac_sha512(env, &entropy, &passphrase, 2048, 64);
+    // Convert entropy to BIP-39 mnemonic (includes checksum and standard wordlist)
+    let entropy_bytes = bytes_to_vec(&entropy);
+    let mnemonic = Mnemonic::from_entropy_in(Language::English, &entropy_bytes)
+        .map_err(|_| MnemonicError::InvalidMnemonic)?;
+    let mnemonic_phrase = mnemonic.to_string();
+
+    // BIP-39 seed derivation:
+    // password = UTF-8 mnemonic phrase
+    // salt = UTF-8 "mnemonic" + passphrase
+    let mut salt = b"mnemonic".to_vec();
+    salt.extend_from_slice(&bytes_to_vec(&passphrase));
+    let seed = pbkdf2_hmac_sha512(env, mnemonic_phrase.as_bytes(), &salt, 2048, 64);
 
     Ok(seed)
 }
@@ -90,38 +101,37 @@ pub fn derive_seed_from_entropy(
 /// PBKDF2-HMAC-SHA512 implementation for seed derivation
 ///
 /// This implements the BIP-39 seed derivation:
-/// PBKDF2-HMAC-SHA512(password="mnemonic"+passphrase, salt=entropy, iterations=2048, dklen=64)
+/// PBKDF2-HMAC-SHA512(
+///   password=utf8(mnemonic phrase),
+///   salt=utf8("mnemonic"+passphrase),
+///   iterations=2048,
+///   dklen=64
+/// )
 fn pbkdf2_hmac_sha512(
     env: &Env,
-    entropy: &Bytes,
-    passphrase: &Bytes,
+    password: &[u8],
+    salt: &[u8],
     iterations: u32,
     _dklen: usize,
 ) -> Bytes {
     use sha2::Sha512;
 
-    // Build password: "mnemonic" + passphrase
-    let mut password = b"mnemonic".to_vec();
-    for i in 0..passphrase.len() {
-        if let Some(byte) = passphrase.get(i) {
-            password.push(byte);
-        }
-    }
-
-    // Build salt from entropy
-    let mut salt = Vec::new();
-    for i in 0..entropy.len() {
-        if let Some(byte) = entropy.get(i) {
-            salt.push(byte);
-        }
-    }
-
     // PBKDF2 derivation
     let mut result = [0u8; 64];
-    pbkdf2::pbkdf2::<hmac::Hmac<Sha512>>(&password, &salt, iterations, &mut result)
+    pbkdf2::pbkdf2::<hmac::Hmac<Sha512>>(password, salt, iterations, &mut result)
         .expect("PBKDF2 derivation failed");
 
     Bytes::from_array(env, &result)
+}
+
+fn bytes_to_vec(bytes: &Bytes) -> Vec<u8> {
+    let mut out = Vec::new();
+    for i in 0..bytes.len() {
+        if let Some(byte) = bytes.get(i) {
+            out.push(byte);
+        }
+    }
+    out
 }
 
 /// Validate that entropy length matches expected word count

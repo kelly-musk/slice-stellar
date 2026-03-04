@@ -2,7 +2,7 @@
 use error::ContractError;
 use sha2::{Digest, Sha256};
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Symbol, Vec};
-use types::{Categories, Config, Dispute, DisputeStatus, TimeLimits};
+use types::{Categories, Config, Dispute, DisputeStatus, TimeLimits, ULTRAHONK_CONTRACT_ADDRESS};
 
 mod error;
 mod mnemonic_generator;
@@ -11,8 +11,7 @@ mod types;
 mod xlm;
 
 mod ultrahonk_contract {
-    // TODO: Add ultrahonk_soroban_contract.wasm for ZK proof verification
-    // soroban_sdk::contractimport!(file = "ultrahonk_soroban_contract.wasm");
+    soroban_sdk::contractimport!(file = "ultrahonk_soroban_contract.wasm");
 }
 
 #[contract]
@@ -357,8 +356,8 @@ impl Slice {
         dispute_id: u64,
         vote: u32,
         salt: BytesN<32>,
-        _vk_json: Bytes,
-        _proof_blob: Bytes,
+        vk_json: Bytes,
+        proof_blob: Bytes,
     ) -> Result<(), ContractError> {
         caller.require_auth();
 
@@ -400,16 +399,15 @@ impl Slice {
             .ok_or(ContractError::ErrInternalState)?
             .ok_or(ContractError::ErrInvalidProof)?;
 
-        // // 1. Verify ZK proof via UltraHonk
-        // let addr = Address::from_str(&env, ULTRAHONK_CONTRACT_ADDRESS);
-        // let client = ultrahonk_contract::Client::new(&env, &addr);
+        // 1. Verify ZK proof via UltraHonk
+        let addr = Address::from_str(&env, ULTRAHONK_CONTRACT_ADDRESS);
+        let client = ultrahonk_contract::Client::new(&env, &addr);
+        match client.try_verify_proof(&vk_json, &proof_blob) {
+            Ok(Ok(_)) => {}
+            _ => return Err(ContractError::ErrInvalidProof),
+        }
 
-        // match client.try_verify_proof(&vk_json, &proof_blob) {
-        //     Ok(Ok(_)) => {}
-        //     _ => return Err(ContractError::ErrInvalidProof),
-        // }
-
-        // // 2. Verify SHA256(vote || salt) == commitment
+        // 2. Verify SHA256(vote || salt) == commitment
         let computed = compute_commitment(&env, vote, &salt)?;
         if computed != stored_commit {
             return Err(ContractError::ErrInvalidProof);

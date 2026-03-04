@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useAddressBook } from "@/hooks/user/useAddressBook";
+import type { DisputeUI } from "@/util/disputeAdapter";
 
 /**
  * Dispute party information for UI components
@@ -24,16 +25,6 @@ export interface DisputeParties {
 }
 
 /**
- * Dispute interface with the minimum required fields
- */
-interface DisputeWithParties {
-  claimer?: string;
-  defender?: string;
-  claimerAddress?: string;
-  defenderAddress?: string;
-}
-
-/**
  * Hook to get dispute parties with contact information
  * 
  * Takes a dispute object and returns enriched party information
@@ -42,15 +33,22 @@ interface DisputeWithParties {
  * @param dispute - Dispute object with claimer/defender addresses
  * @returns DisputeParties with enriched contact info
  */
-export function useDisputeParties(dispute: DisputeWithParties | null | undefined): DisputeParties {
+export function useDisputeParties(
+  dispute: DisputeUI | null | undefined
+): DisputeParties {
   const { getContactByAddress, isLoaded } = useAddressBook();
 
   return useMemo(() => {
+    const getFallbackAvatar = (roleLabel: string): string =>
+      roleLabel.toLowerCase() === "defender"
+        ? "/images/profiles-mockup/profile-2.jpg"
+        : "/images/profiles-mockup/profile-1.jpg";
+
     // Default party structure
     const defaultParty = (address: string, roleLabel: string, themeColor: string): DisputeParty => ({
       name: truncateAddress(address),
       roleLabel,
-      avatarUrl: "/images/profiles-mockup/profile-1.jpg",
+      avatarUrl: getFallbackAvatar(roleLabel),
       themeColor,
       address,
       isKnown: false,
@@ -63,13 +61,16 @@ export function useDisputeParties(dispute: DisputeWithParties | null | undefined
       };
     }
 
-    // Support both naming conventions
-    const claimerAddress = dispute.claimer || dispute.claimerAddress || "";
-    const defenderAddress = dispute.defender || dispute.defenderAddress || "";
+    const claimerAddress = dispute.claimer || "";
+    const defenderAddress = dispute.defender || "";
 
     // Look up contacts
-    const claimerContact = isLoaded ? getContactByAddress(claimerAddress) : undefined;
-    const defenderContact = isLoaded ? getContactByAddress(defenderAddress) : undefined;
+    const claimerContact =
+      isLoaded && claimerAddress ? getContactByAddress(claimerAddress) : undefined;
+    const defenderContact =
+      isLoaded && defenderAddress
+        ? getContactByAddress(defenderAddress)
+        : undefined;
 
     return {
       claimer: claimerContact

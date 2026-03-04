@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       userId,
       email: passkey.email,
       tokenHash,
-      tokenType: 'signup',
+      tokenType: 'magiclink',
     });
   } catch (error: any) {
     console.error("Error in passkey authentication:", error);

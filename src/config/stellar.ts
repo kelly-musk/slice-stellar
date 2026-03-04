@@ -23,6 +23,18 @@ export const stellarConfig = {
   /** Horizon API URL for classic Stellar operations */
   horizonUrl:
     process.env.NEXT_PUBLIC_HORIZON_URL ?? "https://horizon-testnet.stellar.org",
+
+  /** SEP-0010 auth endpoint used to establish authenticated wallet sessions */
+  sep10AuthEndpoint: process.env.NEXT_PUBLIC_STELLAR_SEP10_AUTH_ENDPOINT ?? "",
+
+  /** USDC asset contract IDs by network */
+  usdcTestnetContractId:
+    process.env.NEXT_PUBLIC_STELLAR_USDC_CONTRACT_TESTNET ??
+    "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+  usdcMainnetContractId:
+    process.env.NEXT_PUBLIC_STELLAR_USDC_CONTRACT_MAINNET ?? "",
+  usdcStandaloneContractId:
+    process.env.NEXT_PUBLIC_STELLAR_USDC_CONTRACT_STANDALONE ?? "",
 } as const;
 
 /**
