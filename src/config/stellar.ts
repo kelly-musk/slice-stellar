@@ -49,11 +49,18 @@ export const STELLAR_NETWORK_PASSPHRASES = {
 /**
  * Get the correct network passphrase based on network name
  */
+export type StellarNetwork = keyof typeof STELLAR_NETWORK_PASSPHRASES;
+
 export function getNetworkPassphrase(network: string): string {
-  return (
-    STELLAR_NETWORK_PASSPHRASES[network as keyof typeof STELLAR_NETWORK_PASSPHRASES] ??
-    stellarConfig.networkPassphrase
-  );
+  const passphrase =
+    STELLAR_NETWORK_PASSPHRASES[
+      network as keyof typeof STELLAR_NETWORK_PASSPHRASES
+    ];
+  if (!passphrase) {
+    throw new Error(`Unsupported Stellar network: ${network}`);
+  }
+  return passphrase;
+}
 }
 
 /**
