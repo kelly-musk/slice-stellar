@@ -5,7 +5,6 @@ import { createClient } from "@supabase/supabase-js";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const body = await request.json();
 
     const { userId, email, credentialId, publicKey, counter, deviceName } =
       body;
